@@ -52,6 +52,7 @@ class KirkhillSiteSensorDescription(SensorEntityDescription):
     """Site-level sensor description."""
 
     value_fn: Callable[[KirkhillData], StateType | datetime]
+    last_reset_fn: Callable[[KirkhillData], StateType | datetime] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -75,8 +76,9 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         translation_key="generation_today",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=_GENERATION_STATE_CLASS,  # windowed aggregate — see note above
+        state_class=SensorStateClass.TOTAL,  # windowed aggregate — see note above
         value_fn=lambda d: d.owner_today_kwh,
+        last_reset_fn=lambda d: d.live_data_start_time,
     ),
     KirkhillSiteSensorDescription(
         key="generation_site",
@@ -226,6 +228,13 @@ class KirkhillSiteSensor(KirkhillEntity, SensorEntity):
     @property
     def native_value(self) -> StateType | datetime:
         return self.entity_description.value_fn(self.coordinator.data)
+
+    @property
+    def last_reset(self) -> datetime | None:
+        if self.entity_description.last_reset_fn is None:
+            return super().last_reset
+        else:
+            return self.entity_description.last_reset_fn(self.coordinator.data)
 
 
 class KirkhillTurbineSensor(KirkhillEntity, SensorEntity):

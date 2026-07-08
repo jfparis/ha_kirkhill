@@ -9,9 +9,9 @@ year-to-date generation used by the revenue sensors (YTD is cached ~hourly).
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -75,9 +75,11 @@ class KirkhillData:
     wind_speed_at: str | None
     # Live power (W), derived from today's latest 1-minute interval, plus the
     # owner's total generation so far today (kWh). None on a transient failure.
+    # start_time of series will inform the "last_reset" flag
     owner_power_w: float | None
     site_power_w: float | None
     owner_today_kwh: float | None
+    live_data_start_time: datetime | None
     # Revenue inputs (price-independent; sensors apply the £/MWh price). None
     # when no price is configured or a revenue fetch failed transiently.
     price_gbp_per_mwh: float | None
@@ -138,7 +140,12 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             # Validation / transport / unexpected status — retry next interval.
             raise UpdateFailed(str(err)) from err
 
-        owner_power_w, site_power_w, owner_today_kwh = await self._async_fetch_power()
+        (
+            owner_power_w,
+            site_power_w,
+            owner_today_kwh,
+            live_data_start_time,
+        ) = await self._async_fetch_power()
 
         price = self._price
         mtd_kwh, ytd_series = await self._async_fetch_revenue(price)
@@ -152,6 +159,7 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             wind_speed_mps=latest.get("wind_speed_mps") if latest else None,
             wind_speed_at=latest.get("timestamp") if latest else None,
             owner_power_w=owner_power_w,
+            live_data_start_time=live_data_start_time,
             site_power_w=site_power_w,
             owner_today_kwh=owner_today_kwh,
             price_gbp_per_mwh=price,
@@ -161,11 +169,16 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
 
     async def _async_fetch_power(
         self,
-    ) -> tuple[float | None, float | None, float | None]:
+    ) -> tuple[float | None, float | None, float | None, datetime | None]:
         """Live owner + site power (W) and owner generation-so-far-today (kWh).
 
         Uses `range=today` (finest bucket) regardless of the display range so the
-        figures are always "now"/"today". Transient errors degrade to None; auth
+        figures are always "now"/"today".
+
+        Edge case: if we are in the early hours of the day and no data is available
+        for "today" we try pulling "yesterday"
+
+        Transient errors degrade to None; auth
         errors propagate to reauth.
         """
         try:
@@ -178,10 +191,26 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
         except KirkhillError as err:
             _LOGGER.warning("Power fetch failed (power/today sensors unknown): %s", err)
             return None, None, None
+
+        if len(owner_gen.series) == 0:
+            try:
+                owner_gen, site_gen = await asyncio.gather(
+                    self.client.async_get_generation(SCOPE_OWNER, range_="yesterday"),
+                    self.client.async_get_generation(SCOPE_SITE, range_="yesterday"),
+                )
+            except (KirkhillAuthError, KirkhillPasswordChangeRequired) as err:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            except KirkhillError as err:
+                _LOGGER.warning(
+                    "Power fetch failed (power/today sensors unknown): %s", err
+                )
+                return None, None, None, None
+
         return (
             _interval_power_w(owner_gen),
             _interval_power_w(site_gen),
             owner_gen.summary.total_generation_kwh,
+            datetime.fromisoformat(owner_gen.window.from_),
         )
 
     async def _async_fetch_revenue(
