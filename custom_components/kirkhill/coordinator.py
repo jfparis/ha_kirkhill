@@ -121,6 +121,9 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
 
     async def _async_update_data(self) -> KirkhillData:
         rng = self._range
+
+        previous_data = self.data
+
         try:
             summary_owner, summary_site, turbines, wind = await asyncio.gather(
                 self.client.async_get_summary(SCOPE_OWNER, range_=rng),
@@ -151,6 +154,11 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
         mtd_kwh, ytd_series = await self._async_fetch_revenue(price)
 
         latest = wind.series[-1] if wind.series else None
+
+        # Edge case: API sometime returns previous day data in the early hours of the day
+        if previous_data and previous_data.live_data_start_time > live_data_start_time:
+            raise UpdateFailed("API returned stale data")
+
         return KirkhillData(
             summary_owner=summary_owner.summary,
             summary_site=summary_site.summary,
