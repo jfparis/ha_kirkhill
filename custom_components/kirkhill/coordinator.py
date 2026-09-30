@@ -156,8 +156,15 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
         latest = wind.series[-1] if wind.series else None
 
         # Edge case: API sometime returns previous day data in the early hours of the day
+        _LOGGER.debug("Live data start: %s", live_data_start_time)
+        if previous_data:
+            _LOGGER.debug(
+                "previous_data Live data start: %s", previous_data.live_data_start_time
+            )
         if not live_data_start_time or (
-            previous_data and previous_data.live_data_start_time > live_data_start_time
+            previous_data
+            and previous_data.live_data_start_time
+            and previous_data.live_data_start_time > live_data_start_time
         ):
             raise UpdateFailed("API returned stale data")
 
