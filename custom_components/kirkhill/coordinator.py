@@ -166,7 +166,11 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             and previous_data.live_data_start_time
             and previous_data.live_data_start_time > live_data_start_time
         ):
-            raise UpdateFailed("API returned stale data")
+            _LOGGER.warning(
+                "Detailed generation output is stale. Returning previous data"
+            )
+            live_data_start_time = previous_data.live_data_start_time
+            owner_today_kwh = previous_data.owner_today_kwh
 
         return KirkhillData(
             summary_owner=summary_owner.summary,
@@ -209,7 +213,8 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             _LOGGER.warning("Power fetch failed (power/today sensors unknown): %s", err)
             return None, None, None, None
 
-        if len(owner_gen.series) == 0:
+        # because of a delay in uploading the data, we might need to pull yesterday data
+        if owner_gen.summary.total_generation_kwh == 0:
             try:
                 owner_gen, site_gen = await asyncio.gather(
                     self.client.async_get_generation(SCOPE_OWNER, range_="yesterday"),
