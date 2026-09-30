@@ -224,7 +224,7 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
                 raise ConfigEntryAuthFailed(str(err)) from err
             except KirkhillError as err:
                 _LOGGER.warning(
-                    "Power fetch failed (power/today sensors unknown): %s", err
+                    "Power fetch failed (power/yesterday sensors unknown): %s", err
                 )
                 return None, None, None, None
 
