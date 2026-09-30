@@ -75,4 +75,7 @@ class KirkhillTurbineRunningSensor(KirkhillEntity, BinarySensorEntity):
             "rotor_speed_rpm": turbine.latest_rotor_speed_rpm,
             "rotor_speed_at": turbine.latest_rotor_speed_at,
             "latest_generation_interval_end": turbine.latest_generation_interval_end,
+            "icon": "mdi:wind-turbine-check"
+            if self.is_on
+            else "mdi:mdi:wind-turbine-alert",
         }
