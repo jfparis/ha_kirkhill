@@ -40,7 +40,7 @@ from .revenue import monthly_breakdown_from_series, revenue_gbp, ytd_total_gbp
 # NOT be added to the Energy Dashboard, which assumes an ever-increasing total and
 # would mis-compute deltas. (The dedicated revenue sensors in Phase 2b are the
 # correct, separately-windowed earnings figures.)
-_GENERATION_STATE_CLASS = SensorStateClass.MEASUREMENT
+_GENERATION_STATE_CLASS = None  # SensorStateClass.MEASUREMENT
 
 
 def _parse_ts(value: str | None) -> datetime | None:

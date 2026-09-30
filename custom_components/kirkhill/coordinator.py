@@ -214,7 +214,7 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             return None, None, None, None
 
         # because of a delay in uploading the data, we might need to pull yesterday data
-        if owner_gen.summary.total_generation_kwh == 0:
+        if owner_gen.summary.total_generation_kwh == 0 and len(owner_gen.series) == 0:
             try:
                 owner_gen, site_gen = await asyncio.gather(
                     self.client.async_get_generation(SCOPE_OWNER, range_="yesterday"),
