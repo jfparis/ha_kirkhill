@@ -106,7 +106,7 @@ class Summary:
     total_generation_kwh: float | None
     capacity_factor_percent: float | None
     active_turbines: int | None
-    site_capacity_watts: int | None
+    capacity_watts: int | None
     latest_generation_interval_end: str | None
     latest_import_status: str | None
 
@@ -118,7 +118,7 @@ class Summary:
             total_generation_kwh=d.get("total_generation_kwh"),
             capacity_factor_percent=d.get("capacity_factor_percent"),
             active_turbines=d.get("active_turbines"),
-            site_capacity_watts=d.get("site_capacity_watts"),
+            capacity_watts=d.get("capacity_watts"),
             latest_generation_interval_end=d.get("latest_generation_interval_end"),
             latest_import_status=d.get("latest_import_status"),
         )
@@ -366,7 +366,7 @@ async def _message(resp: aiohttp.ClientResponse, fallback: str) -> str:
     """Best-effort extraction of the API's `{"message": ...}` error text."""
     try:
         body = await resp.json()
-    except (aiohttp.ClientError, ValueError):
+    except aiohttp.ClientError, ValueError:
         return fallback
     if isinstance(body, dict):
         msg = body.get("message")
