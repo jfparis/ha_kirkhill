@@ -62,6 +62,8 @@
       "site_power": { "name": "Site power" },
       "capacity_factor": { "name": "Capacity factor" },
       "adjusted_capacity_factor": { "name": "Adjusted Capacity factor" },
+      "p50_power" : {"name": "P50 forecasted power"},
+      "p90_power" : {"name": "P90 forecasted power"},
       "active_turbines": { "name": "Active turbines" },
       "site_capacity": { "name": "Site capacity" },
       "import_status": { "name": "Import status" },

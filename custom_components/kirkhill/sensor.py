@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from calendar import monthrange
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -28,7 +29,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.util import dt as dt_util
 
 from .api import Turbine
-from .const import CURRENCY_GBP, TURBINE_IDS
+from .const import CURRENCY_GBP, MONTHLY_FORECAST, TURBINE_IDS
 from .coordinator import KirkhillCoordinator, KirkhillData
 from .entity import KirkhillEntity, site_device_info, turbine_device_info
 from .revenue import monthly_breakdown_from_series, revenue_gbp, ytd_total_gbp
@@ -42,6 +43,57 @@ _GENERATION_STATE_CLASS = None  # SensorStateClass.MEASUREMENT
 
 def _parse_ts(value: str | None) -> datetime | None:
     return dt_util.parse_datetime(value) if value else None
+
+
+def _mid_month(date: datetime) -> datetime:
+    """Compute the middle of the month for a given date."""
+    month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_end = month_start.replace(
+        day=monthrange(month_start.year, month_start.month)[1],
+        hour=23,
+        minute=59,
+        second=59,
+    )
+
+    return month_start + ((month_end - month_start) / 2)
+
+
+def _forecast_site_generation(date: datetime | None, forecast: str) -> float:
+    """Extrapolate an hourly production forecast for any given datetime.
+
+    The forecast in the database are a monthly forecast and is deemed
+    to be valid for the middle of the month
+
+    Returns Watts to be aligned to HASS internal database
+    """
+
+    if not date:
+        return None
+
+    nb_days = monthrange(date.year, date.month)[1]
+    mid_month = _mid_month(date)
+
+    if date <= mid_month:
+        end_date = mid_month
+        start_date = _mid_month(date - timedelta(days=30))
+    else:
+        start_date = mid_month
+        end_date = _mid_month(date + timedelta(days=30))
+
+    start_date_forecast = MONTHLY_FORECAST[start_date.month][forecast]
+    end_date_forecast = MONTHLY_FORECAST[end_date.month][forecast]
+
+    return (
+        (
+            start_date_forecast
+            + (end_date_forecast - start_date_forecast)
+            * (date - start_date).total_seconds()
+            / (end_date - start_date).total_seconds()
+        )
+        / nb_days
+        / 24
+        * 1000
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -100,6 +152,26 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfPower.WATT,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: d.site_power_w,
+    ),
+    KirkhillSiteSensorDescription(
+        key="p50_power",
+        translation_key="p50_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: _forecast_site_generation(
+            _parse_ts(d.summary_owner.latest_generation_interval_end), "p50_kwh"
+        ),
+    ),
+    KirkhillSiteSensorDescription(
+        key="p90_power",
+        translation_key="p90_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: _forecast_site_generation(
+            _parse_ts(d.summary_owner.latest_generation_interval_end), "p90_kwh"
+        ),
     ),
     KirkhillSiteSensorDescription(
         key="capacity_factor",
