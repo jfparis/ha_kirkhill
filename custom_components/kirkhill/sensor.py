@@ -35,11 +35,8 @@ from .revenue import monthly_breakdown_from_series, revenue_gbp, ytd_total_gbp
 
 # IMPORTANT — generation modelling.
 # Generation values are WINDOWED AGGREGATES (kWh summed over the selected range),
-# NOT a monotonic meter reading. They rise AND fall as the window slides, so the
-# generation sensors use state_class MEASUREMENT (never TOTAL_INCREASING) and must
-# NOT be added to the Energy Dashboard, which assumes an ever-increasing total and
-# would mis-compute deltas. (The dedicated revenue sensors in Phase 2b are the
-# correct, separately-windowed earnings figures.)
+# NOT a monotonic meter reading. They rise AND fall as the window slides, so it makes
+# no sense to keep any statistics about them at all
 _GENERATION_STATE_CLASS = None  # SensorStateClass.MEASUREMENT
 
 
@@ -76,7 +73,7 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         translation_key="generation_today",
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        state_class=SensorStateClass.TOTAL,  # windowed aggregate — see note above
+        state_class=SensorStateClass.TOTAL,  # not an windowed aggregate
         value_fn=lambda d: d.owner_today_kwh,
         last_reset_fn=lambda d: d.live_data_start_time,
     ),
@@ -108,7 +105,7 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         key="capacity_factor",
         translation_key="capacity_factor",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=None,  # This is a windowed aggregate
         suggested_display_precision=1,
         value_fn=lambda d: d.summary_site.capacity_factor_percent,
     ),
@@ -165,7 +162,7 @@ TURBINE_SENSORS: tuple[KirkhillTurbineSensorDescription, ...] = (
         key="share",
         translation_key="turbine_share",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=_GENERATION_STATE_CLASS,  # windowed aggregate — see note above
         suggested_display_precision=1,
         value_fn=lambda t: t.generation_share_percent,
     ),
@@ -173,7 +170,7 @@ TURBINE_SENSORS: tuple[KirkhillTurbineSensorDescription, ...] = (
         key="capacity_factor",
         translation_key="turbine_capacity_factor",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=SensorStateClass.MEASUREMENT,
+        state_class=_GENERATION_STATE_CLASS,  # windowed aggregate — see note above
         suggested_display_precision=1,
         value_fn=lambda t: t.capacity_factor_percent,
     ),
