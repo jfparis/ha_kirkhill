@@ -61,6 +61,7 @@
       "owner_power": { "name": "Owner power" },
       "site_power": { "name": "Site power" },
       "capacity_factor": { "name": "Capacity factor" },
+      "adjusted_capacity_factor": { "name": "Adjusted Capacity factor" },
       "active_turbines": { "name": "Active turbines" },
       "site_capacity": { "name": "Site capacity" },
       "import_status": { "name": "Import status" },

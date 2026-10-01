@@ -105,9 +105,25 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         key="capacity_factor",
         translation_key="capacity_factor",
         native_unit_of_measurement=PERCENTAGE,
-        state_class=None,  # This is a windowed aggregate
+        state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda d: d.summary_site.capacity_factor_percent,
+        value_fn=lambda d: (
+            d.site_power_w / (2.35 * 1000000 * 8) * 100 if d.site_power_w else None
+        ),
+    ),
+    KirkhillSiteSensorDescription(
+        key="adjusted_capacity_factor",
+        translation_key="adjusted_capacity_factor",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=1,
+        value_fn=lambda d: (
+            d.site_power_w / (2.35 * 1000000 * d.summary_site.active_turbines) * 100
+            if d.site_power_w
+            and d.summary_site.active_turbines
+            and d.summary_site.active_turbines > 0
+            else None
+        ),
     ),
     KirkhillSiteSensorDescription(
         key="active_turbines",
@@ -230,8 +246,7 @@ class KirkhillSiteSensor(KirkhillEntity, SensorEntity):
     def last_reset(self) -> datetime | None:
         if self.entity_description.last_reset_fn is None:
             return super().last_reset
-        else:
-            return self.entity_description.last_reset_fn(self.coordinator.data)
+        return self.entity_description.last_reset_fn(self.coordinator.data)
 
 
 class KirkhillTurbineSensor(KirkhillEntity, SensorEntity):
