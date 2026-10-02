@@ -80,6 +80,7 @@ class KirkhillData:
     site_power_w: float | None
     owner_today_kwh: float | None
     live_data_start_time: datetime | None
+    owner_share: float | None
     # Revenue inputs (price-independent; sensors apply the £/MWh price). None
     # when no price is configured or a revenue fetch failed transiently.
     price_gbp_per_mwh: float | None
@@ -143,6 +144,18 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             # Validation / transport / unexpected status — retry next interval.
             raise UpdateFailed(str(err)) from err
 
+        if (
+            summary_owner.summary.capacity_watts
+            and summary_site.summary.capacity_watts
+            and summary_site.summary.capacity_watts > 0
+        ):
+            owner_share = (
+                summary_owner.summary.capacity_watts
+                / summary_site.summary.capacity_watts
+            )
+        else:
+            owner_share = None
+
         (
             owner_power_w,
             site_power_w,
@@ -181,6 +194,7 @@ class KirkhillCoordinator(DataUpdateCoordinator[KirkhillData]):
             wind_speed_at=latest.get("timestamp") if latest else None,
             owner_power_w=owner_power_w,
             live_data_start_time=live_data_start_time,
+            owner_share=owner_share,
             site_power_w=site_power_w,
             owner_today_kwh=owner_today_kwh,
             price_gbp_per_mwh=price,

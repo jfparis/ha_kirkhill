@@ -5,7 +5,7 @@ from __future__ import annotations
 from calendar import monthrange
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -45,20 +45,15 @@ def _parse_ts(value: str | None) -> datetime | None:
     return dt_util.parse_datetime(value) if value else None
 
 
-def _mid_month(date: datetime) -> datetime:
+def _mid_month(date: date) -> datetime:
     """Compute the middle of the month for a given date."""
-    month_start = date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    month_end = month_start.replace(
-        day=monthrange(month_start.year, month_start.month)[1],
-        hour=23,
-        minute=59,
-        second=59,
-    )
 
-    return month_start + ((month_end - month_start) / 2)
+    return date.replace(day=15)
 
 
-def _forecast_site_generation(date: datetime | None, forecast: str) -> float:
+def _forecast_site_generation(
+    last_update: datetime | None, forecast: str, extrapolate: bool = False
+) -> float:
     """Extrapolate an hourly production forecast for any given datetime.
 
     The forecast in the database are a monthly forecast and is deemed
@@ -67,33 +62,49 @@ def _forecast_site_generation(date: datetime | None, forecast: str) -> float:
     Returns Watts to be aligned to HASS internal database
     """
 
-    if not date:
+    if not last_update:
         return None
+
+    date = last_update.date()
 
     nb_days = monthrange(date.year, date.month)[1]
     mid_month = _mid_month(date)
 
-    if date <= mid_month:
-        end_date = mid_month
-        start_date = _mid_month(date - timedelta(days=30))
-    else:
-        start_date = mid_month
-        end_date = _mid_month(date + timedelta(days=30))
+    if extrapolate:
+        if date <= mid_month:
+            end_date = mid_month
+            start_date = _mid_month(date - timedelta(days=30))
+        else:
+            start_date = mid_month
+            end_date = _mid_month(date + timedelta(days=30))
 
-    start_date_forecast = MONTHLY_FORECAST[start_date.month][forecast]
-    end_date_forecast = MONTHLY_FORECAST[end_date.month][forecast]
+        start_date_forecast = MONTHLY_FORECAST[start_date.month][forecast]
+        end_date_forecast = MONTHLY_FORECAST[end_date.month][forecast]
 
-    return (
-        (
-            start_date_forecast
-            + (end_date_forecast - start_date_forecast)
-            * (date - start_date).total_seconds()
-            / (end_date - start_date).total_seconds()
+        return (
+            (
+                start_date_forecast
+                + (end_date_forecast - start_date_forecast)
+                * (date - start_date).days
+                / (end_date - start_date).days
+            )
+            / nb_days
+            / 24
+            * 1000
         )
-        / nb_days
-        / 24
-        * 1000
+    return MONTHLY_FORECAST[date.month][forecast] / nb_days / 24 * 1000
+
+
+def _site_generation_today(data: KirkhillData, forecast: str) -> float:
+    latest_generation_interval_end = _parse_ts(
+        data.summary_owner.latest_generation_interval_end
     )
+    last_reset = data.live_data_start_time
+
+    generation = _forecast_site_generation(latest_generation_interval_end, forecast)
+    hours_today = (latest_generation_interval_end - last_reset).total_seconds() / 3600
+
+    return generation * hours_today / 1000
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -172,6 +183,62 @@ SITE_SENSORS: tuple[KirkhillSiteSensorDescription, ...] = (
         value_fn=lambda d: _forecast_site_generation(
             _parse_ts(d.summary_owner.latest_generation_interval_end), "p90_kwh"
         ),
+    ),
+    KirkhillSiteSensorDescription(
+        key="p50_owner_power",
+        translation_key="p50_owner_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: (
+            _forecast_site_generation(
+                _parse_ts(d.summary_owner.latest_generation_interval_end), "p50_kwh"
+            )
+            * d.owner_share
+            if d.owner_share
+            else None
+        ),
+    ),
+    KirkhillSiteSensorDescription(
+        key="p90_owner_power",
+        translation_key="p90_owner_power",
+        device_class=SensorDeviceClass.POWER,
+        native_unit_of_measurement=UnitOfPower.WATT,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: (
+            _forecast_site_generation(
+                _parse_ts(d.summary_owner.latest_generation_interval_end), "p90_kwh"
+            )
+            * d.owner_share
+            if d.owner_share
+            else None
+        ),
+    ),
+    KirkhillSiteSensorDescription(
+        key="p50_owner_generation_today",
+        translation_key="p50_owner_generation_today",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: (
+            _site_generation_today(d, "p50_kwh") * d.owner_share
+            if d.owner_share
+            else None
+        ),
+        last_reset_fn=lambda d: d.live_data_start_time,
+    ),
+    KirkhillSiteSensorDescription(
+        key="p90_owner_generation_today",
+        translation_key="p90_owner_generation_today",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        state_class=SensorStateClass.TOTAL,
+        value_fn=lambda d: (
+            _site_generation_today(d, "p90_kwh") * d.owner_share
+            if d.owner_share
+            else None
+        ),
+        last_reset_fn=lambda d: d.live_data_start_time,
     ),
     KirkhillSiteSensorDescription(
         key="capacity_factor",
